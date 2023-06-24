@@ -1,0 +1,97 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
+#include <UrlEncode.h>
+
+const char* ssid = "";
+const char* password = "";
+
+const char* host = ".000webhostapp.com";
+const int httpPort = 80;
+
+String phoneNumber = "";
+String apiKey = "";
+
+boolean status = false;
+const int pirPin = D1;
+unsigned long lastCheckTime = 0;
+
+bool isPinActive() {
+  return digitalRead(pirPin) == HIGH;
+}
+
+void sendNotification(const String message) {
+  String encodedMessage = urlEncode(message);
+  String url = "http://api.callmebot.com/whatsapp.php?phone=" + phoneNumber + "&apikey=" + apiKey + "&text=" + encodedMessage;
+  WiFiClient client;
+  HTTPClient http;
+  http.begin(client, url);
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+  int httpResponseCode = http.POST(url);
+  if (httpResponseCode == 200) {
+    Serial.println("Message sent successfully");
+  } else {
+    Serial.println("Error sending the message");
+    Serial.print("HTTP response code: ");
+    Serial.println(httpResponseCode);
+  }
+  http.end();
+}
+
+void checkStatus() {
+  WiFiClient wifiClient;
+
+  if (!wifiClient.connect(host, httpPort)) {
+    Serial.println("Connection Failed");
+    return;
+  }
+
+  String link = "http://" + String(host) + "/ambildata.php";
+  HTTPClient httpClient;
+  httpClient.begin(wifiClient, link);
+  int httpResponseCode = httpClient.GET();
+
+  if (httpResponseCode == HTTP_CODE_OK) {
+    String response = httpClient.getString();
+
+    if (response.toInt() == 1) {
+      status = true;
+    } else if (response.toInt() == 0) {
+      status = false;
+    } else {
+      Serial.println("Status Bermasalah");
+    }
+  } else {
+    Serial.println("Error code: " + String(httpResponseCode));
+  }
+
+  httpClient.end();
+}
+
+void setup() {
+  Serial.begin(9600);
+
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.print("Connected to WiFi network with IP Address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void loop() {
+  if (millis() - lastCheckTime >= 10000) {
+    lastCheckTime = millis();
+    checkStatus();
+  }
+
+  if (status && isPinActive()) {
+    Serial.println("Mengirim Notifikasi");
+    sendNotification("Ada tamu di rumah!");
+    delay(15000);
+  }
+}
